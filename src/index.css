@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* CodeMirror dark scrollbar */
+.cm-scroller::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.cm-scroller::-webkit-scrollbar-track {
+  background: #1e2130;
+}
+.cm-scroller::-webkit-scrollbar-thumb {
+  background: #3a3f55;
+  border-radius: 4px;
+}
+.cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: #565e7e;
+}

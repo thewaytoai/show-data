@@ -1,0 +1,191 @@
+use crate::{db, db::PoolRef, storage, AppState};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use tauri::State;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TableInfo {
+    pub name: String,
+    pub table_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ColumnInfo {
+    pub name: String,
+    pub data_type: String,
+    pub nullable: bool,
+    pub default_value: Option<String>,
+    pub is_primary_key: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QueryResult {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<Value>>,
+    pub affected_rows: Option<u64>,
+    pub error: Option<String>,
+}
+
+fn get_pool(id: &str, state: &State<'_, AppState>) -> Result<PoolRef, String> {
+    let pools = state.pools.lock().map_err(|e| e.to_string())?;
+    pools
+        .get(id)
+        .map(|cp| cp.cloned())
+        .ok_or_else(|| "Not connected. Call connect() first.".to_string())
+}
+
+fn db_type(id: &str) -> Option<String> {
+    storage::load_connections()
+        .into_iter()
+        .find(|c| c.id == id)
+        .map(|c| c.db_type)
+}
+
+#[tauri::command]
+pub async fn connect(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let connections = storage::load_connections();
+    let config = connections
+        .into_iter()
+        .find(|c| c.id == id)
+        .ok_or_else(|| format!("Connection {} not found", id))?;
+
+    let pool = match config.db_type.as_str() {
+        "mysql" => db::ConnectionPool::MySql(db::mysql::create_pool(&config).await?),
+        "postgres" => db::ConnectionPool::Postgres(db::postgres::create_pool(&config).await?),
+        other => return Err(format!("Unsupported db type: {}", other)),
+    };
+
+    let mut pools = state.pools.lock().map_err(|e| e.to_string())?;
+    pools.insert(id, pool);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn disconnect(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let pool = {
+        let mut pools = state.pools.lock().map_err(|e| e.to_string())?;
+        pools.remove(&id).map(|cp| cp.into_ref())
+    };
+    if let Some(p) = pool {
+        match p {
+            PoolRef::MySql(p) => p.close().await,
+            PoolRef::Postgres(p) => p.close().await,
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_databases(id: String, state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    match get_pool(&id, &state)? {
+        PoolRef::MySql(p) => db::mysql::get_databases(&p).await,
+        PoolRef::Postgres(p) => db::postgres::get_databases(&p).await,
+    }
+}
+
+#[tauri::command]
+pub async fn get_tables(
+    id: String,
+    database: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<TableInfo>, String> {
+    match get_pool(&id, &state)? {
+        PoolRef::MySql(p) => db::mysql::get_tables(&p, &database).await,
+        PoolRef::Postgres(p) => db::postgres::get_tables(&p, &database).await,
+    }
+}
+
+#[tauri::command]
+pub async fn get_table_columns(
+    id: String,
+    database: String,
+    table: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ColumnInfo>, String> {
+    match get_pool(&id, &state)? {
+        PoolRef::MySql(p) => db::mysql::get_columns(&p, &database, &table).await,
+        PoolRef::Postgres(p) => db::postgres::get_columns(&p, &database, &table).await,
+    }
+}
+
+#[tauri::command]
+pub async fn execute_query(
+    id: String,
+    _database: String,
+    sql: String,
+    state: State<'_, AppState>,
+) -> Result<QueryResult, String> {
+    let pool = get_pool(&id, &state)?;
+    let trimmed = sql.trim().to_uppercase();
+    let is_select = trimmed.starts_with("SELECT")
+        || trimmed.starts_with("SHOW")
+        || trimmed.starts_with("EXPLAIN")
+        || trimmed.starts_with("DESCRIBE")
+        || trimmed.starts_with("DESC");
+
+    Ok(match pool {
+        PoolRef::MySql(p) => {
+            if is_select {
+                match sqlx::query(&sql).fetch_all(&p).await {
+                    Ok(rows) => {
+                        if rows.is_empty() {
+                            return Ok(QueryResult { columns: vec![], rows: vec![], affected_rows: Some(0), error: None });
+                        }
+                        let columns = db::mysql::columns(&rows[0]);
+                        let rows = rows.iter().map(db::mysql::row_to_json).collect();
+                        QueryResult { columns, rows, affected_rows: None, error: None }
+                    }
+                    Err(e) => QueryResult { columns: vec![], rows: vec![], affected_rows: None, error: Some(e.to_string()) },
+                }
+            } else {
+                match sqlx::query(&sql).execute(&p).await {
+                    Ok(r) => QueryResult { columns: vec![], rows: vec![], affected_rows: Some(r.rows_affected()), error: None },
+                    Err(e) => QueryResult { columns: vec![], rows: vec![], affected_rows: None, error: Some(e.to_string()) },
+                }
+            }
+        }
+        PoolRef::Postgres(p) => {
+            if is_select {
+                match sqlx::query(&sql).fetch_all(&p).await {
+                    Ok(rows) => {
+                        if rows.is_empty() {
+                            return Ok(QueryResult { columns: vec![], rows: vec![], affected_rows: Some(0), error: None });
+                        }
+                        let columns = db::postgres::columns(&rows[0]);
+                        let rows = rows.iter().map(db::postgres::row_to_json).collect();
+                        QueryResult { columns, rows, affected_rows: None, error: None }
+                    }
+                    Err(e) => QueryResult { columns: vec![], rows: vec![], affected_rows: None, error: Some(e.to_string()) },
+                }
+            } else {
+                match sqlx::query(&sql).execute(&p).await {
+                    Ok(r) => QueryResult { columns: vec![], rows: vec![], affected_rows: Some(r.rows_affected()), error: None },
+                    Err(e) => QueryResult { columns: vec![], rows: vec![], affected_rows: None, error: Some(e.to_string()) },
+                }
+            }
+        }
+    })
+}
+
+#[tauri::command]
+pub async fn get_table_data(
+    id: String,
+    database: String,
+    table: String,
+    page: i64,
+    page_size: i64,
+    state: State<'_, AppState>,
+) -> Result<QueryResult, String> {
+    let offset = (page - 1) * page_size;
+    let sql = match db_type(&id).as_deref() {
+        Some("postgres") => format!(
+            "SELECT * FROM \"{}\".\"{}\" LIMIT {} OFFSET {}",
+            database, table, page_size, offset
+        ),
+        _ => format!(
+            "SELECT * FROM `{}`.`{}` LIMIT {} OFFSET {}",
+            database, table, page_size, offset
+        ),
+    };
+    execute_query(id, database, sql, state).await
+}
