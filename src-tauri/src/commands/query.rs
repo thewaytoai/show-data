@@ -111,7 +111,7 @@ pub async fn get_table_columns(
 #[tauri::command]
 pub async fn execute_query(
     id: String,
-    _database: String,
+    database: String,
     sql: String,
     state: State<'_, AppState>,
 ) -> Result<QueryResult, String> {
@@ -124,9 +124,19 @@ pub async fn execute_query(
         || trimmed.starts_with("DESC");
 
     Ok(match pool {
-        PoolRef::MySql(p) => {
+        PoolRef::MySql(_) => {
+            // Create a direct connection with the target database baked in,
+            // avoiding USE (not supported in prepared statement protocol, error 1295).
+            let config = storage::load_connections()
+                .into_iter()
+                .find(|c| c.id == id)
+                .ok_or_else(|| "Connection config not found".to_string())?;
+            let mut conn = match db::mysql::connect_to_db(&config, &database).await {
+                Ok(c) => c,
+                Err(e) => return Ok(QueryResult { columns: vec![], rows: vec![], affected_rows: None, error: Some(e) }),
+            };
             if is_select {
-                match sqlx::query(&sql).fetch_all(&p).await {
+                match sqlx::query(&sql).fetch_all(&mut conn).await {
                     Ok(rows) => {
                         if rows.is_empty() {
                             return Ok(QueryResult { columns: vec![], rows: vec![], affected_rows: Some(0), error: None });
@@ -138,13 +148,14 @@ pub async fn execute_query(
                     Err(e) => QueryResult { columns: vec![], rows: vec![], affected_rows: None, error: Some(e.to_string()) },
                 }
             } else {
-                match sqlx::query(&sql).execute(&p).await {
+                match sqlx::query(&sql).execute(&mut conn).await {
                     Ok(r) => QueryResult { columns: vec![], rows: vec![], affected_rows: Some(r.rows_affected()), error: None },
                     Err(e) => QueryResult { columns: vec![], rows: vec![], affected_rows: None, error: Some(e.to_string()) },
                 }
             }
         }
         PoolRef::Postgres(p) => {
+            // PostgreSQL: database is fixed per pool; schema via search_path if needed
             if is_select {
                 match sqlx::query(&sql).fetch_all(&p).await {
                     Ok(rows) => {

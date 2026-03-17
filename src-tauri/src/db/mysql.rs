@@ -44,6 +44,24 @@ pub async fn create_pool(config: &ConnectionConfig) -> Result<sqlx::MySqlPool, S
         .map_err(|e| e.to_string())
 }
 
+/// Create a single connection to a specific database (avoids USE statement).
+pub async fn connect_to_db(
+    config: &ConnectionConfig,
+    database: &str,
+) -> Result<sqlx::MySqlConnection, String> {
+    use sqlx::ConnectOptions;
+    use sqlx::mysql::MySqlConnectOptions;
+    let mut opts = MySqlConnectOptions::new()
+        .host(&config.host)
+        .port(config.port)
+        .username(&config.username)
+        .password(&config.password);
+    if !database.is_empty() {
+        opts = opts.database(database);
+    }
+    opts.connect().await.map_err(|e| e.to_string())
+}
+
 pub async fn get_databases(pool: &sqlx::MySqlPool) -> Result<Vec<String>, String> {
     // 用 information_schema 代替 SHOW DATABASES，避免 VARBINARY 列问题
     let rows = sqlx::query(

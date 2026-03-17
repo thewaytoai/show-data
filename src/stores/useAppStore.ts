@@ -26,7 +26,7 @@ interface AppState {
   loadTables: (id: string, database: string) => Promise<void>;
   toggleDatabase: (id: string, database: string) => void;
 
-  openSqlEditor: (connectionId: string, database: string) => void;
+  openSqlEditor: (connectionId: string, database: string, prefill?: string) => void;
   openTableViewer: (
     connectionId: string,
     database: string,
@@ -145,7 +145,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  openSqlEditor: (connectionId, database) => {
+  openSqlEditor: (connectionId, database, prefill = "") => {
     const conn = get().connections.find((c) => c.id === connectionId);
     const id = newId();
     const tab: Tab = {
@@ -154,7 +154,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       title: `Query - ${conn?.name ?? connectionId}`,
       connectionId,
       database,
-      sql: "",
+      sql: prefill,
       result: null,
       isRunning: false,
     };
