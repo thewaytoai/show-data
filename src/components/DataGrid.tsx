@@ -173,6 +173,20 @@ export function DataGrid({ tab }: Props) {
           onClick: () => startEdit(menu.displayRowIdx, menu.colName, menu.value),
           disabled: !pkCol,
         },
+        {
+          label: "Set to NULL",
+          disabled: !pkCol || menu.value === null || menu.value === undefined,
+          onClick: async () => {
+            if (!pkCol || !tab.result) return;
+            const row = displayRows[menu.displayRowIdx];
+            const pkIdx = tab.result.columns.indexOf(pkCol);
+            const pkVal = String(row.data[pkIdx]);
+            const sql = `UPDATE ${q(tab.table, dbType)} SET ${q(menu.colName, dbType)} = NULL WHERE ${q(pkCol, dbType)} = ${sqlVal(pkVal)}`;
+            const res = await api.executeQuery(tab.connectionId, tab.database, sql);
+            if (res.error) flash(`Error: ${res.error}`, false);
+            else { flash("✓ Set to NULL", true); loadTableData(tab.id, tab.page, sortCol, sortDir); }
+          },
+        },
       ],
       [
         {
@@ -200,6 +214,21 @@ export function DataGrid({ tab }: Props) {
               `INSERT INTO ${q(tab.table, dbType)} (${cols}) VALUES (${vals});`
             );
           },
+        },
+      ],
+      [
+        {
+          label: "Filter by This Value",
+          disabled: strVal === null,
+          onClick: () => {
+            setShowFilters(true);
+            if (strVal !== null) setFilters((f) => ({ ...f, [menu.colName]: strVal }));
+          },
+        },
+        {
+          label: "Clear All Filters",
+          disabled: !Object.values(filters).some(Boolean),
+          onClick: () => setFilters({}),
         },
       ],
     ];
