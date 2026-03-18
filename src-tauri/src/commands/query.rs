@@ -185,18 +185,39 @@ pub async fn get_table_data(
     table: String,
     page: i64,
     page_size: i64,
+    sort_col: Option<String>,
+    sort_dir: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<QueryResult, String> {
     let offset = (page - 1) * page_size;
-    let sql = match db_type(&id).as_deref() {
-        Some("postgres") => format!(
-            "SELECT * FROM \"{}\".\"{}\" LIMIT {} OFFSET {}",
-            database, table, page_size, offset
-        ),
-        _ => format!(
-            "SELECT * FROM `{}`.`{}` LIMIT {} OFFSET {}",
-            database, table, page_size, offset
-        ),
+    let is_pg = db_type(&id).as_deref() == Some("postgres");
+
+    let order_clause = sort_col
+        .filter(|c| !c.is_empty())
+        .map(|c| {
+            let dir = if sort_dir.as_deref().unwrap_or("asc").to_lowercase() == "desc" {
+                "DESC"
+            } else {
+                "ASC"
+            };
+            if is_pg {
+                format!(" ORDER BY \"{}\" {}", c, dir)
+            } else {
+                format!(" ORDER BY `{}` {}", c, dir)
+            }
+        })
+        .unwrap_or_default();
+
+    let sql = if is_pg {
+        format!(
+            "SELECT * FROM \"{}\".\"{}\"{}  LIMIT {} OFFSET {}",
+            database, table, order_clause, page_size, offset
+        )
+    } else {
+        format!(
+            "SELECT * FROM `{}`.`{}`{} LIMIT {} OFFSET {}",
+            database, table, order_clause, page_size, offset
+        )
     };
     execute_query(id, database, sql, state).await
 }

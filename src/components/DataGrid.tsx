@@ -50,20 +50,24 @@ export function DataGrid({ tab }: Props) {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   function handleHeaderClick(col: string) {
+    let newSortCol: string | null;
+    let newSortDir: "asc" | "desc";
     if (sortCol === col) {
-      if (sortDir === "asc") setSortDir("desc");
-      else setSortCol(null);
+      if (sortDir === "asc") { newSortCol = col; newSortDir = "desc"; }
+      else { newSortCol = null; newSortDir = "asc"; }
     } else {
-      setSortCol(col);
-      setSortDir("asc");
+      newSortCol = col; newSortDir = "asc";
     }
+    setSortCol(newSortCol);
+    setSortDir(newSortDir);
+    loadTableData(tab.id, 1, newSortCol, newSortDir);
   }
 
   // ── Filtering ────────────────────────────────────────────────────────────
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<Record<string, string>>({});
 
-  // ── Computed display rows ────────────────────────────────────────────────
+  // ── Computed display rows (filter only; sorting is server-side) ──────────
   const displayRows = useMemo(() => {
     const raw = tab.result?.rows ?? [];
     let rows = raw.map((data, origIndex) => ({ data, origIndex }));
@@ -79,20 +83,8 @@ export function DataGrid({ tab }: Props) {
       );
     }
 
-    if (sortCol && tab.result) {
-      const idx = tab.result.columns.indexOf(sortCol);
-      if (idx >= 0) {
-        rows = [...rows].sort((a, b) => {
-          const av = a.data[idx], bv = b.data[idx];
-          if (av == null) return sortDir === "asc" ? 1 : -1;
-          if (bv == null) return sortDir === "asc" ? -1 : 1;
-          const cmp = String(av).localeCompare(String(bv), undefined, { numeric: true });
-          return sortDir === "asc" ? cmp : -cmp;
-        });
-      }
-    }
     return rows;
-  }, [tab.result, sortCol, sortDir, filters]);
+  }, [tab.result, filters]);
 
   // ── Inline cell editing ──────────────────────────────────────────────────
   const [editCell, setEditCell] = useState<{ displayRow: number; col: string } | null>(null);
@@ -253,7 +245,7 @@ export function DataGrid({ tab }: Props) {
 
         {sortCol && (
           <button
-            onClick={() => setSortCol(null)}
+            onClick={() => { setSortCol(null); loadTableData(tab.id, 1, null, "asc"); }}
             className="px-2 py-1 text-xs border border-gray-600 rounded text-gray-400 hover:border-gray-400"
           >
             ✕ Sort
@@ -261,7 +253,7 @@ export function DataGrid({ tab }: Props) {
         )}
 
         <button
-          onClick={() => loadTableData(tab.id, tab.page)}
+          onClick={() => loadTableData(tab.id, tab.page, sortCol, sortDir)}
           disabled={tab.isLoading}
           className="px-2 py-1 text-xs border border-gray-600 rounded text-gray-300 hover:border-gray-400 disabled:opacity-50"
         >
@@ -270,13 +262,13 @@ export function DataGrid({ tab }: Props) {
 
         <div className="flex items-center gap-1">
           <button
-            onClick={() => loadTableData(tab.id, tab.page - 1)}
+            onClick={() => loadTableData(tab.id, tab.page - 1, sortCol, sortDir)}
             disabled={tab.isLoading || tab.page <= 1}
             className="px-2 py-1 text-xs border border-gray-600 rounded text-gray-300 hover:border-gray-400 disabled:opacity-50"
           >‹</button>
           <span className="text-xs text-gray-400 px-1">p.{tab.page}</span>
           <button
-            onClick={() => loadTableData(tab.id, tab.page + 1)}
+            onClick={() => loadTableData(tab.id, tab.page + 1, sortCol, sortDir)}
             disabled={tab.isLoading || (result?.rows.length ?? 0) < 100}
             className="px-2 py-1 text-xs border border-gray-600 rounded text-gray-300 hover:border-gray-400 disabled:opacity-50"
           >›</button>

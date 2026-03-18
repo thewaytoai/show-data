@@ -39,7 +39,9 @@ export const api = {
     database: string,
     table: string,
     page: number,
-    pageSize: number
+    pageSize: number,
+    sortCol?: string | null,
+    sortDir?: "asc" | "desc"
   ) =>
     invoke<QueryResult>("get_table_data", {
       id,
@@ -47,5 +49,7 @@ export const api = {
       table,
       page,
       pageSize,
+      sortCol: sortCol ?? null,
+      sortDir: sortDir ?? "asc",
     }),
 };

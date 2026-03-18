@@ -36,7 +36,7 @@ interface AppState {
   setActiveTab: (tabId: string) => void;
   updateTabSql: (tabId: string, sql: string) => void;
   runQuery: (tabId: string) => Promise<void>;
-  loadTableData: (tabId: string, page?: number) => Promise<void>;
+  loadTableData: (tabId: string, page?: number, sortCol?: string | null, sortDir?: "asc" | "desc") => Promise<void>;
 }
 
 let tabCounter = 0;
@@ -245,7 +245,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  loadTableData: async (tabId, page = 1) => {
+  loadTableData: async (tabId, page = 1, sortCol = null, sortDir = "asc") => {
     const tab = get().tabs.find((t) => t.id === tabId);
     if (!tab || tab.type !== "table-viewer") return;
     set((s) => ({
@@ -259,7 +259,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         tab.database,
         tab.table,
         page,
-        100
+        100,
+        sortCol,
+        sortDir
       );
       set((s) => ({
         tabs: s.tabs.map((t) =>
