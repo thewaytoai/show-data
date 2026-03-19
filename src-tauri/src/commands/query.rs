@@ -52,6 +52,7 @@ pub async fn connect(id: String, state: State<'_, AppState>) -> Result<(), Strin
     let pool = match config.db_type.as_str() {
         "mysql" => db::ConnectionPool::MySql(db::mysql::create_pool(&config).await?),
         "postgres" => db::ConnectionPool::Postgres(db::postgres::create_pool(&config).await?),
+        "sqlite" => db::ConnectionPool::Sqlite(db::sqlite::create_pool(&config).await?),
         other => return Err(format!("Unsupported db type: {}", other)),
     };
 
@@ -70,6 +71,7 @@ pub async fn disconnect(id: String, state: State<'_, AppState>) -> Result<(), St
         match p {
             PoolRef::MySql(p) => p.close().await,
             PoolRef::Postgres(p) => p.close().await,
+            PoolRef::Sqlite(p) => p.close().await,
         }
     }
     Ok(())
@@ -80,6 +82,7 @@ pub async fn get_databases(id: String, state: State<'_, AppState>) -> Result<Vec
     match get_pool(&id, &state)? {
         PoolRef::MySql(p) => db::mysql::get_databases(&p).await,
         PoolRef::Postgres(p) => db::postgres::get_databases(&p).await,
+        PoolRef::Sqlite(p) => db::sqlite::get_databases(&p).await,
     }
 }
 
@@ -92,6 +95,7 @@ pub async fn get_tables(
     match get_pool(&id, &state)? {
         PoolRef::MySql(p) => db::mysql::get_tables(&p, &database).await,
         PoolRef::Postgres(p) => db::postgres::get_tables(&p, &database).await,
+        PoolRef::Sqlite(p) => db::sqlite::get_tables(&p, &database).await,
     }
 }
 
@@ -105,6 +109,7 @@ pub async fn get_table_columns(
     match get_pool(&id, &state)? {
         PoolRef::MySql(p) => db::mysql::get_columns(&p, &database, &table).await,
         PoolRef::Postgres(p) => db::postgres::get_columns(&p, &database, &table).await,
+        PoolRef::Sqlite(p) => db::sqlite::get_columns(&p, &database, &table).await,
     }
 }
 
@@ -121,7 +126,8 @@ pub async fn execute_query(
         || trimmed.starts_with("SHOW")
         || trimmed.starts_with("EXPLAIN")
         || trimmed.starts_with("DESCRIBE")
-        || trimmed.starts_with("DESC");
+        || trimmed.starts_with("DESC")
+        || trimmed.starts_with("PRAGMA");
 
     Ok(match pool {
         PoolRef::MySql(_) => {
@@ -155,7 +161,6 @@ pub async fn execute_query(
             }
         }
         PoolRef::Postgres(p) => {
-            // PostgreSQL: database is fixed per pool; schema via search_path if needed
             if is_select {
                 match sqlx::query(&sql).fetch_all(&p).await {
                     Ok(rows) => {
@@ -164,6 +169,26 @@ pub async fn execute_query(
                         }
                         let columns = db::postgres::columns(&rows[0]);
                         let rows = rows.iter().map(db::postgres::row_to_json).collect();
+                        QueryResult { columns, rows, affected_rows: None, error: None }
+                    }
+                    Err(e) => QueryResult { columns: vec![], rows: vec![], affected_rows: None, error: Some(e.to_string()) },
+                }
+            } else {
+                match sqlx::query(&sql).execute(&p).await {
+                    Ok(r) => QueryResult { columns: vec![], rows: vec![], affected_rows: Some(r.rows_affected()), error: None },
+                    Err(e) => QueryResult { columns: vec![], rows: vec![], affected_rows: None, error: Some(e.to_string()) },
+                }
+            }
+        }
+        PoolRef::Sqlite(p) => {
+            if is_select {
+                match sqlx::query(&sql).fetch_all(&p).await {
+                    Ok(rows) => {
+                        if rows.is_empty() {
+                            return Ok(QueryResult { columns: vec![], rows: vec![], affected_rows: Some(0), error: None });
+                        }
+                        let columns = db::sqlite::columns(&rows[0]);
+                        let rows = rows.iter().map(db::sqlite::row_to_json).collect();
                         QueryResult { columns, rows, affected_rows: None, error: None }
                     }
                     Err(e) => QueryResult { columns: vec![], rows: vec![], affected_rows: None, error: Some(e.to_string()) },
@@ -190,7 +215,9 @@ pub async fn get_table_data(
     state: State<'_, AppState>,
 ) -> Result<QueryResult, String> {
     let offset = (page - 1) * page_size;
-    let is_pg = db_type(&id).as_deref() == Some("postgres");
+    let db_t = db_type(&id).unwrap_or_default();
+    let is_mysql = db_t == "mysql";
+    let is_sqlite = db_t == "sqlite";
 
     let order_clause = sort_col
         .filter(|c| !c.is_empty())
@@ -200,22 +227,28 @@ pub async fn get_table_data(
             } else {
                 "ASC"
             };
-            if is_pg {
-                format!(" ORDER BY \"{}\" {}", c, dir)
-            } else {
+            if is_mysql {
                 format!(" ORDER BY `{}` {}", c, dir)
+            } else {
+                format!(" ORDER BY \"{}\" {}", c, dir)
             }
         })
         .unwrap_or_default();
 
-    let sql = if is_pg {
+    let sql = if is_mysql {
         format!(
-            "SELECT * FROM \"{}\".\"{}\"{}  LIMIT {} OFFSET {}",
+            "SELECT * FROM `{}`.`{}`{} LIMIT {} OFFSET {}",
             database, table, order_clause, page_size, offset
+        )
+    } else if is_sqlite {
+        // SQLite has no schema prefix; use double-quote identifier quoting
+        format!(
+            "SELECT * FROM \"{}\"{}  LIMIT {} OFFSET {}",
+            table, order_clause, page_size, offset
         )
     } else {
         format!(
-            "SELECT * FROM `{}`.`{}`{} LIMIT {} OFFSET {}",
+            "SELECT * FROM \"{}\".\"{}\"{}  LIMIT {} OFFSET {}",
             database, table, order_clause, page_size, offset
         )
     };

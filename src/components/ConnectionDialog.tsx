@@ -36,8 +36,10 @@ export function ConnectionDialog({ onClose, initial }: Props) {
     setForm((f) => ({
       ...f,
       db_type,
-      port: db_type === "mysql" ? 3306 : 5432,
+      port: db_type === "postgres" ? 5432 : 3306,
+      host: db_type === "sqlite" ? "" : (f.host || "localhost"),
     }));
+    setTestResult(null);
   }
 
   async function handleTest() {
@@ -66,6 +68,8 @@ export function ConnectionDialog({ onClose, initial }: Props) {
     }
   }
 
+  const isSqlite = form.db_type === "sqlite";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="w-[480px] rounded-lg bg-gray-800 shadow-xl border border-gray-700">
@@ -86,7 +90,7 @@ export function ConnectionDialog({ onClose, initial }: Props) {
           <div>
             <label className="block text-sm text-gray-400 mb-1">Type</label>
             <div className="flex gap-3">
-              {(["mysql", "postgres"] as DbType[]).map((t) => (
+              {(["mysql", "postgres", "sqlite"] as DbType[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => handleDbTypeChange(t)}
@@ -96,7 +100,7 @@ export function ConnectionDialog({ onClose, initial }: Props) {
                       : "border-gray-600 text-gray-400 hover:border-gray-500"
                   }`}
                 >
-                  {t === "mysql" ? "MySQL" : "PostgreSQL"}
+                  {t === "mysql" ? "MySQL" : t === "postgres" ? "PostgreSQL" : "SQLite"}
                 </button>
               ))}
             </div>
@@ -107,55 +111,71 @@ export function ConnectionDialog({ onClose, initial }: Props) {
             <Input
               value={form.name}
               onChange={(v) => set("name", v)}
-              placeholder="My Database"
+              placeholder={isSqlite ? "My SQLite DB" : "My Database"}
             />
           </Field>
 
-          {/* Host + Port */}
-          <div className="flex gap-3">
-            <Field label="Host" className="flex-1">
+          {isSqlite ? (
+            /* SQLite: file path only */
+            <Field label="Database File Path">
               <Input
-                value={form.host}
-                onChange={(v) => set("host", v)}
-                placeholder="localhost"
+                value={form.database}
+                onChange={(v) => set("database", v)}
+                placeholder="/path/to/database.db  or  :memory:"
               />
+              <p className="mt-1 text-xs text-gray-600">
+                Absolute path to the .db / .sqlite file, or <code className="text-gray-500">:memory:</code> for an in-memory database.
+              </p>
             </Field>
-            <Field label="Port" className="w-24">
-              <Input
-                value={String(form.port)}
-                onChange={(v) => set("port", Number(v))}
-                placeholder="3306"
-              />
-            </Field>
-          </div>
+          ) : (
+            <>
+              {/* Host + Port */}
+              <div className="flex gap-3">
+                <Field label="Host" className="flex-1">
+                  <Input
+                    value={form.host}
+                    onChange={(v) => set("host", v)}
+                    placeholder="localhost"
+                  />
+                </Field>
+                <Field label="Port" className="w-24">
+                  <Input
+                    value={String(form.port)}
+                    onChange={(v) => set("port", Number(v))}
+                    placeholder={form.db_type === "postgres" ? "5432" : "3306"}
+                  />
+                </Field>
+              </div>
 
-          {/* Username + Password */}
-          <div className="flex gap-3">
-            <Field label="Username" className="flex-1">
-              <Input
-                value={form.username}
-                onChange={(v) => set("username", v)}
-                placeholder="root"
-              />
-            </Field>
-            <Field label="Password" className="flex-1">
-              <Input
-                value={form.password}
-                onChange={(v) => set("password", v)}
-                type="password"
-                placeholder="••••••••"
-              />
-            </Field>
-          </div>
+              {/* Username + Password */}
+              <div className="flex gap-3">
+                <Field label="Username" className="flex-1">
+                  <Input
+                    value={form.username}
+                    onChange={(v) => set("username", v)}
+                    placeholder="root"
+                  />
+                </Field>
+                <Field label="Password" className="flex-1">
+                  <Input
+                    value={form.password}
+                    onChange={(v) => set("password", v)}
+                    type="password"
+                    placeholder="••••••••"
+                  />
+                </Field>
+              </div>
 
-          {/* Database */}
-          <Field label="Default Database">
-            <Input
-              value={form.database}
-              onChange={(v) => set("database", v)}
-              placeholder="my_database"
-            />
-          </Field>
+              {/* Database */}
+              <Field label="Default Database">
+                <Input
+                  value={form.database}
+                  onChange={(v) => set("database", v)}
+                  placeholder="my_database"
+                />
+              </Field>
+            </>
+          )}
 
           {/* Test result */}
           {testResult && (

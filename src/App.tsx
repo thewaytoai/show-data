@@ -209,8 +209,8 @@ function Toolbar({ onShowShortcuts, onSaved }: { onShowShortcuts: () => void; on
   }
 
   // ── Breadcrumb ──
-  const dbType = conn?.db_type === "postgres" ? "PG" : "MySQL";
-  const dbColor = conn?.db_type === "postgres" ? "text-violet-400" : "text-blue-400";
+  const dbType = conn?.db_type === "postgres" ? "PG" : conn?.db_type === "sqlite" ? "SQLite" : "MySQL";
+  const dbColor = conn?.db_type === "postgres" ? "text-violet-400" : conn?.db_type === "sqlite" ? "text-amber-400" : "text-blue-400";
 
   const breadcrumb = (
     <div className="flex items-center gap-1.5 text-xs text-gray-500 min-w-0 overflow-hidden">

@@ -41,6 +41,10 @@ pub async fn test_connection(config: ConnectionConfig) -> Result<String, String>
             let pool = db::postgres::create_pool(&config).await?;
             pool.close().await;
         }
+        "sqlite" => {
+            let pool = db::sqlite::create_pool(&config).await?;
+            pool.close().await;
+        }
         other => return Err(format!("Unsupported db type: {}", other)),
     }
     Ok("Connection successful".to_string())
