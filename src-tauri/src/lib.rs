@@ -23,6 +23,7 @@ pub fn run() {
             commands::connection::list_connections,
             commands::connection::delete_connection,
             commands::connection::test_connection,
+            commands::connection::export_file,
             commands::query::connect,
             commands::query::disconnect,
             commands::query::get_databases,

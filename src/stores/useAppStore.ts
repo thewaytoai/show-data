@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { ConnectionConfig, Tab, QueryResult } from "../types";
 import { api } from "../lib/tauri";
+import { formatSQL } from "../lib/sql";
 
 interface TreeNode {
   databases: string[];
@@ -35,6 +36,7 @@ interface AppState {
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   updateTabSql: (tabId: string, sql: string) => void;
+  formatSqlTab: (tabId: string) => void;
   runQuery: (tabId: string) => Promise<void>;
   loadTableData: (tabId: string, page?: number, sortCol?: string | null, sortDir?: "asc" | "desc") => Promise<void>;
 }
@@ -208,6 +210,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       tabs: s.tabs.map((t) =>
         t.id === tabId && t.type === "sql-editor" ? { ...t, sql } : t
+      ),
+    }));
+  },
+
+  formatSqlTab: (tabId) => {
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === tabId && t.type === "sql-editor"
+          ? { ...t, sql: formatSQL(t.sql) }
+          : t
       ),
     }));
   },

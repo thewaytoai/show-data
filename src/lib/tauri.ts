@@ -52,4 +52,7 @@ export const api = {
       sortCol: sortCol ?? null,
       sortDir: sortDir ?? "asc",
     }),
+
+  exportFile: (filename: string, content: string) =>
+    invoke<string>("export_file", { filename, content }),
 };

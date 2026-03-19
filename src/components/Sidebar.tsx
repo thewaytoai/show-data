@@ -38,15 +38,6 @@ function IconTable() {
   );
 }
 
-function IconView() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
-      <path d="M1 6s2-4 5-4 5 4 5 4-2 4-5 4-5-4-5-4z" stroke="currentColor" strokeWidth="1.1" />
-      <circle cx="6" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.1" />
-    </svg>
-  );
-}
-
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
 export function Sidebar() {

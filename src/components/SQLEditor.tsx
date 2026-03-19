@@ -5,6 +5,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { sql } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { autocompletion } from "@codemirror/autocomplete";
+import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { useAppStore } from "../stores/useAppStore";
 import { SqlEditorTab } from "../types";
 
@@ -20,26 +21,27 @@ export function SQLEditor({ tab }: Props) {
   const runQuery = useAppStore((s) => s.runQuery);
   const updateTabSql = useAppStore((s) => s.updateTabSql);
 
+  // Create editor once per tab.id
   useEffect(() => {
     if (!editorRef.current) return;
 
-    const runCmd = () => {
-      runQuery(tab.id);
-      return true;
-    };
+    const runCmd = () => { runQuery(tab.id); return true; };
 
     const state = EditorState.create({
       doc: tab.sql,
       extensions: [
         lineNumbers(),
         highlightActiveLine(),
+        highlightSelectionMatches(),
         history(),
         sql(),
         oneDark,
         autocompletion(),
+        search({ top: true }),
         keymap.of([
           ...defaultKeymap,
           ...historyKeymap,
+          ...searchKeymap,
           { key: "Ctrl-Enter", run: runCmd },
           { key: "Mod-Enter", run: runCmd },
         ]),
@@ -63,11 +65,21 @@ export function SQLEditor({ tab }: Props) {
       view.destroy();
       viewRef.current = null;
     };
-    // Only init once per tab
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab.id]);
 
-  // Sync readOnly when running
+  // Sync external SQL changes (e.g., from Format SQL) into CodeMirror
+  useEffect(() => {
+    if (!viewRef.current) return;
+    const currentDoc = viewRef.current.state.doc.toString();
+    if (tab.sql !== currentDoc) {
+      viewRef.current.dispatch({
+        changes: { from: 0, to: currentDoc.length, insert: tab.sql },
+      });
+    }
+  }, [tab.sql]);
+
+  // Sync readOnly state when query is running
   useEffect(() => {
     viewRef.current?.dispatch({
       effects: readOnlyCompartment.reconfigure(
@@ -78,23 +90,6 @@ export function SQLEditor({ tab }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-3 py-2 bg-gray-900 border-b border-gray-700">
-        <span className="text-xs text-gray-400">{tab.database}</span>
-        <div className="flex-1" />
-        <button
-          onClick={() => runQuery(tab.id)}
-          disabled={tab.isRunning}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white rounded"
-        >
-          {tab.isRunning ? (
-            <>
-              <span className="animate-spin">⟳</span> Running…
-            </>
-          ) : (
-            <>▶ Run (Ctrl+Enter)</>
-          )}
-        </button>
-      </div>
       <div ref={editorRef} className="flex-1 overflow-hidden" />
     </div>
   );
